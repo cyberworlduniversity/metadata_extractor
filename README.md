@@ -1,5 +1,15 @@
 # 🧾 Metadata Extractor
 
+
+## Get this repository
+
+Clone the current project from its canonical GitHub location, then follow the installation and usage steps below.
+
+```bash
+git clone https://github.com/cyberworlduniversity/metadata_extractor.git
+cd metadata_extractor
+```
+
 > **Tool #11 in the Kit** — Extract hidden metadata from image files including camera info, date/time, and GPS location data.
 
 [![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://python.org)
