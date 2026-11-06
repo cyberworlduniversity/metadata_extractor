@@ -202,7 +202,7 @@ def save_report(metadata, output_path):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
-            f.write("\\n")
+            f.write("\n")
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp_path, target)
