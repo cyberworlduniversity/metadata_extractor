@@ -27,11 +27,11 @@ The **Metadata Extractor** reads hidden EXIF and metadata embedded inside image 
 
 ```bash
 # Clone the repository
-git clone https://github.com/hemanathan115/metadata-extractor.git
-cd metadata-extractor
+git clone https://github.com/cyberworlduniversity/metadata_extractor.git
+cd metadata_extractor
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ---
@@ -68,8 +68,7 @@ python metadata_extractor.py *.jpg --batch --save batch_report.json
 ## 📦 Dependencies
 
 ```
-Pillow>=9.0.0
-exifread>=3.0.0
+Pillow>=9.0.0,<13.0.0
 ```
 
 Install with:
@@ -140,7 +139,7 @@ metadata-extractor/
 
 ## 🔒 Privacy Notice
 
-This tool runs **entirely offline** on your local machine. No data is uploaded or transmitted anywhere.
+This tool processes files locally and does not upload image contents. GPS metadata may reveal a photo's location; review reports before sharing them. Dependencies are installed only when you run the documented install command—this program never installs packages automatically.
 
 ---
 
@@ -154,3 +153,30 @@ GitHub: [@hemanathan115](https://github.com/hemanathan115)
 ## 📄 License
 
 MIT License — feel free to use, modify, and distribute.
+
+
+## 🧪 Run Tests
+
+```bash
+python -m unittest discover -v
+```
+
+## 🔄 Program Flow
+
+```mermaid
+flowchart TD
+    A[Start] --> B[Parse image paths and options]
+    B --> C{File exists?}
+    C -- No --> D[Return file error]
+    C -- Yes --> E[Open image with Pillow]
+    E --> F[Read image properties and EXIF]
+    F --> G[Extract camera, date and GPS fields]
+    G --> H{Output format}
+    H -- Pretty --> I[Display readable report]
+    H -- JSON --> J[Display JSON]
+    I --> K{Save requested?}
+    J --> K
+    K -- Yes --> L[Write JSON report]
+    K -- No --> M[Finish]
+    L --> M
+```
