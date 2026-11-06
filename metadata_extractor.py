@@ -15,17 +15,11 @@ from datetime import datetime
 try:
     from PIL import Image
     from PIL.ExifTags import TAGS, GPSTAGS
-except ImportError:
-    print("Installing required packages...")
-    os.system("pip install Pillow --break-system-packages -q")
-    from PIL import Image
-    from PIL.ExifTags import TAGS, GPSTAGS
-
-try:
-    import exifread
-except ImportError:
-    os.system("pip install exifread --break-system-packages -q")
-    import exifread
+except ImportError as exc:
+    raise SystemExit(
+        "Missing dependency: Pillow. Install project dependencies with "
+        "'python -m pip install -r requirements.txt'."
+    ) from exc
 
 
 def get_decimal_coordinates(gps_info):
@@ -63,7 +57,7 @@ def extract_gps_info(exif_data):
         gps_info[tag_name] = val
 
     lat, lon = get_decimal_coordinates(gps_info)
-    if lat and lon:
+    if lat is not None and lon is not None:
         gps_info['DecimalLatitude'] = lat
         gps_info['DecimalLongitude'] = lon
         gps_info['GoogleMapsLink'] = f"https://www.google.com/maps?q={lat},{lon}"
