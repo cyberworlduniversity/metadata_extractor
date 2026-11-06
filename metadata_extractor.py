@@ -9,8 +9,13 @@ import os
 import sys
 import json
 import argparse
+import tempfile
+import warnings
 from pathlib import Path
 from datetime import datetime
+
+MAX_IMAGE_BYTES = 100 * 1024 * 1024
+MAX_IMAGE_PIXELS = 40_000_000
 
 try:
     from PIL import Image
@@ -66,80 +71,91 @@ def extract_gps_info(exif_data):
 
 
 def extract_metadata(image_path):
-    """Extract all metadata from an image file."""
+    """Extract image metadata while limiting file and decoded-image resource use."""
     path = Path(image_path)
-    if not path.exists():
-        return {"error": f"File not found: {image_path}"}
-
-    result = {
-        "file_info": {
-            "filename": path.name,
-            "filepath": str(path.resolve()),
-            "extension": path.suffix.upper(),
-            "file_size": f"{path.stat().st_size / 1024:.2f} KB",
-            "last_modified": datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-        },
-        "camera_info": {},
-        "date_info": {},
-        "gps_info": {},
-        "image_info": {},
-        "other_metadata": {}
-    }
+    if not path.is_file():
+        return {"error": "File not found or not a regular file."}
 
     try:
-        img = Image.open(image_path)
-        result["image_info"] = {
-            "format": img.format,
-            "mode": img.mode,
-            "width": img.width,
-            "height": img.height,
-            "resolution": f"{img.width} x {img.height} pixels"
+        stat = path.stat()
+        if stat.st_size > MAX_IMAGE_BYTES:
+            return {"error": f"Image exceeds the {MAX_IMAGE_BYTES // (1024 * 1024)} MB safety limit."}
+
+        result = {
+            "file_info": {
+                "filename": path.name,
+                "filepath": str(path.resolve()),
+                "extension": path.suffix.upper(),
+                "file_size": f"{stat.st_size / 1024:.2f} KB",
+                "last_modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+            },
+            "camera_info": {},
+            "date_info": {},
+            "gps_info": {},
+            "image_info": {},
+            "other_metadata": {}
         }
 
-        exif_data = {}
-        raw_exif = img._getexif() if hasattr(img, '_getexif') else None
-        if raw_exif:
-            for tag_id, value in raw_exif.items():
-                tag = TAGS.get(tag_id, tag_id)
-                exif_data[tag] = value
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(path) as img:
+                    if img.width * img.height > MAX_IMAGE_PIXELS:
+                        return {"error": f"Image exceeds the {MAX_IMAGE_PIXELS:,}-pixel safety limit."}
 
-        # Camera Information
-        camera_fields = ['Make', 'Model', 'Software', 'LensModel', 'LensMake',
-                         'FocalLength', 'FNumber', 'ExposureTime', 'ISOSpeedRatings',
-                         'Flash', 'WhiteBalance', 'ExposureMode', 'MeteringMode']
-        for field in camera_fields:
-            val = exif_data.get(field)
-            if val is not None:
-                if hasattr(val, 'numerator'):
-                    val = float(val)
-                result["camera_info"][field] = str(val)
+                    result["image_info"] = {
+                        "format": img.format,
+                        "mode": img.mode,
+                        "width": img.width,
+                        "height": img.height,
+                        "resolution": f"{img.width} x {img.height} pixels"
+                    }
 
-        # Date Information
-        date_fields = ['DateTime', 'DateTimeOriginal', 'DateTimeDigitized']
-        for field in date_fields:
-            val = exif_data.get(field)
-            if val:
-                result["date_info"][field] = val
+                    exif_data = {}
+                    raw_exif = img._getexif() if hasattr(img, "_getexif") else None
+                    if raw_exif:
+                        for tag_id, value in raw_exif.items():
+                            tag = TAGS.get(tag_id, tag_id)
+                            exif_data[tag] = value
 
-        # GPS Information
-        gps = extract_gps_info(exif_data)
-        if gps:
-            result["gps_info"] = {k: str(v) for k, v in gps.items()}
-        else:
-            result["gps_info"] = {"status": "No GPS data found"}
+                    camera_fields = [
+                        "Make", "Model", "Software", "LensModel", "LensMake",
+                        "FocalLength", "FNumber", "ExposureTime", "ISOSpeedRatings",
+                        "Flash", "WhiteBalance", "ExposureMode", "MeteringMode"
+                    ]
+                    for field in camera_fields:
+                        val = exif_data.get(field)
+                        if val is not None:
+                            if hasattr(val, "numerator"):
+                                val = float(val)
+                            result["camera_info"][field] = str(val)[:200]
 
-        # Other metadata
-        skip = set(camera_fields + date_fields + ['GPSInfo', 'MakerNote', 'UserComment'])
-        for tag, val in exif_data.items():
-            if tag not in skip and not isinstance(val, bytes):
-                if hasattr(val, 'numerator'):
-                    val = float(val)
-                result["other_metadata"][str(tag)] = str(val)[:200]
+                    date_fields = ["DateTime", "DateTimeOriginal", "DateTimeDigitized"]
+                    for field in date_fields:
+                        val = exif_data.get(field)
+                        if val:
+                            result["date_info"][field] = str(val)[:100]
 
-    except Exception as e:
-        result["error"] = f"Could not read EXIF data: {str(e)}"
+                    gps = extract_gps_info(exif_data)
+                    if gps:
+                        result["gps_info"] = {str(k): str(v)[:200] for k, v in gps.items()}
+                    else:
+                        result["gps_info"] = {"status": "No GPS data found"}
 
-    return result
+                    skip = set(camera_fields + date_fields + ["GPSInfo", "MakerNote", "UserComment"])
+                    for tag, val in exif_data.items():
+                        if tag not in skip and not isinstance(val, bytes):
+                            if hasattr(val, "numerator"):
+                                val = float(val)
+                            result["other_metadata"][str(tag)[:100]] = str(val)[:200]
+
+            return result
+        except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+            return {"error": "Image rejected by decompression-bomb protection."}
+        except Exception as exc:
+            return {"error": f"Could not read image metadata ({type(exc).__name__})."}
+    except OSError:
+        return {"error": "Could not access the image file."}
 
 
 def display_metadata(metadata, output_format='pretty'):
@@ -179,9 +195,23 @@ def display_metadata(metadata, output_format='pretty'):
 
 
 def save_report(metadata, output_path):
-    """Save metadata report as JSON file."""
-    with open(output_path, 'w') as f:
-        json.dump(metadata, f, indent=2)
+    """Atomically save a metadata report without following destination symlinks."""
+    target = Path(output_path)
+    parent = target.parent if str(target.parent) else Path(".")
+    fd, temp_path = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, target)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except FileNotFoundError:
+            pass
+        raise
     print(f"📄 Report saved to: {output_path}")
 
 
